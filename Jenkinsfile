@@ -115,21 +115,22 @@ spec:
             }
         }
 
-        stage('SonarQube Scan') {
-            steps {
-                container('sonar-scanner') {
-                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                        sh '''
-                            sonar-scanner \
-                              -Dsonar.projectKey=reactapp \
-                              -Dsonar.sources=. \
-                              -Dsonar.host.url=http://sonarqube-sonarqube.sonarqube.svc.cluster.local:9000 \
-                              -Dsonar.login=$SONAR_TOKEN
-                        '''
-                    }
-                }
+       stage('SonarQube Scan') {
+    agent { label '2401147_Datta' }
+    steps {
+        container('sonar-scanner') {
+            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                sh """
+                sonar-scanner \
+                  -Dsonar.projectKey=reactapp \
+                  -Dsonar.sources=. \
+                  -Dsonar.host.url=http://sonarqube.sonarqube.svc.cluster.local:9000 \
+                  -Dsonar.token=$SONAR_TOKEN
+                """
             }
         }
+    }
+}
 
         stage('Login to Nexus') {
             steps {
