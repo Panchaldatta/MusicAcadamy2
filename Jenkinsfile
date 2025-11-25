@@ -6,10 +6,22 @@ apiVersion: v1
 kind: Pod
 spec:
   containers:
+
+  - name: node
+    image: node:18
+    command: ["cat"]
+    tty: true
+    volumeMounts:
+    - name: workspace-volume
+      mountPath: /home/jenkins/agent
+
   - name: sonar-scanner
     image: sonarsource/sonar-scanner-cli
     command: ["cat"]
     tty: true
+    volumeMounts:
+    - name: workspace-volume
+      mountPath: /home/jenkins/agent
 
   - name: kubectl
     image: bitnami/kubectl:latest
@@ -24,6 +36,8 @@ spec:
     - name: kubeconfig-secret
       mountPath: /kube/config
       subPath: kubeconfig
+    - name: workspace-volume
+      mountPath: /home/jenkins/agent
 
   - name: dind
     image: docker:dind
@@ -66,8 +80,8 @@ spec:
     }
 
     environment {
-        NEXUS_REGISTRY = '127.0.0.1:30085'
-        REPO_NAME = '2401147-dattaPanchal'
+        NEXUS_REGISTRY = '127.0.0.1:8085'
+        REPO_NAME = 'datta-project'
         IMAGE_NAME = 'reactapp'
         NAMESPACE = '2401147'
     }
@@ -76,18 +90,15 @@ spec:
 
         stage('CHECK') {
             steps {
-                echo "DEBUG >>> Updated Jenkinsfile for REACT PROJECT ACTIVE"
+                echo "DEBUG: Jenkinsfile with NODE CONTAINER is running"
             }
         }
 
         stage('Build React App') {
             steps {
-                container('dind') {
+                container('node') {
                     sh '''
-                        echo "Installing Node modules"
                         npm install
-
-                        echo "Building React App"
                         npm run build
                     '''
                 }
@@ -98,15 +109,7 @@ spec:
             steps {
                 container('dind') {
                     sh '''
-                        echo "Waiting for Docker daemon..."
-                        for i in $(seq 1 20); do
-                            docker info >/dev/null 2>&1 && break
-                            echo "dockerd not ready ($i)..."
-                            sleep 2
-                        done
-
                         docker build -t reactapp:latest .
-                        docker image ls
                     '''
                 }
             }
@@ -128,44 +131,22 @@ spec:
             }
         }
 
-        stage('Login to Nexus Registry') {
+        stage('Login to Nexus') {
             steps {
                 container('dind') {
                     sh '''
-                        docker --version
-                        sleep 5
                         docker login ${NEXUS_REGISTRY} -u admin -p Changeme@2025
                     '''
                 }
             }
         }
 
-        stage('Tag + Push Image') {
+        stage('Push Image') {
             steps {
                 container('dind') {
                     sh '''
                         docker tag reactapp:latest ${NEXUS_REGISTRY}/${REPO_NAME}/${IMAGE_NAME}:${BUILD_NUMBER}
-                        docker tag reactapp:latest ${NEXUS_REGISTRY}/${REPO_NAME}/${IMAGE_NAME}:latest
-
                         docker push ${NEXUS_REGISTRY}/${REPO_NAME}/${IMAGE_NAME}:${BUILD_NUMBER}
-                        docker push ${NEXUS_REGISTRY}/${REPO_NAME}/${IMAGE_NAME}:latest
-                    '''
-                }
-            }
-        }
-
-        stage('Create Namespace + Registry Secret') {
-            steps {
-                container('kubectl') {
-                    sh '''
-                        kubectl get namespace ${NAMESPACE} || kubectl create namespace ${NAMESPACE}
-
-                        kubectl create secret docker-registry nexus-secret \
-                          --docker-server=${NEXUS_REGISTRY} \
-                          --docker-username=admin \
-                          --docker-password=Changeme@2025 \
-                          --namespace=${NAMESPACE} \
-                          --dry-run=client -o yaml | kubectl apply -f -
                     '''
                 }
             }
@@ -176,13 +157,8 @@ spec:
                 container('kubectl') {
                     dir('k8s') {
                         sh '''
-                            sed -i "s|reactapp:v1|${NEXUS_REGISTRY}/${REPO_NAME}/${IMAGE_NAME}:${BUILD_NUMBER}|g" deployment.yaml
-
                             kubectl apply -f deployment.yaml -n ${NAMESPACE}
                             kubectl apply -f service.yaml -n ${NAMESPACE}
-
-                            sleep 5
-                            kubectl get pods -n ${NAMESPACE}
                         '''
                     }
                 }
