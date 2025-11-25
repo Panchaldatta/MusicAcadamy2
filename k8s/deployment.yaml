@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: "2401147"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: reactapp-pvc
+  namespace: "2401147"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reactapp-deployment
+  namespace: "2401147"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reactapp
+  template:
+    metadata:
+      labels:
+        app: reactapp
+    spec:
+      imagePullSecrets:
+        - name: nexus-secret
+
+      initContainers:
+      - name: fix-permissions
+        image: busybox
+        command: ["sh", "-c", "mkdir -p /data && chmod -R 777 /data"]
+        volumeMounts:
+        - name: reactapp-data
+          mountPath: /data
+
+      containers:
+      - name: reactapp
+        image: 127.0.0.1:30085/datta-project/reactapp:v1
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: reactapp-data
+          mountPath: /usr/share/nginx/html/data
+          subPath: data.json
+
+      volumes:
+      - name: reactapp-data
+        persistentVolumeClaim:
+          claimName: reactapp-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reactapp-service
+  namespace: "2401147"
+spec:
+  selector:
+    app: reactapp
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: LoadBalancer
